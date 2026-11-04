@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>OP CHESS MASTER</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;min-height:100vh;padding:20px 12px 35px;
+ background:radial-gradient(circle at top,#263d5d,#101827 65%);
+ color:#fff;font-family:Arial,sans-serif;text-align:center;
+}
+header{margin:8px 0 22px}
+h1{
+ margin:0;color:#ffd65a;font-size:clamp(25px,7vw,36px);
+ letter-spacing:1px;text-shadow:0 0 18px #ffb30088
+}
+header p{color:#b9c9dd;margin:9px 0;font-size:16px}
+.game{
+ width:100%;max-width:540px;margin:auto;padding:17px;
+ border-radius:25px;background:#19283c;
+ border:1px solid #354963;
+ box-shadow:0 18px 45px #0007;
+}
+.players{display:flex;gap:10px;margin-bottom:14px}
+.player{
+ flex:1;padding:13px 5px;border-radius:13px;
+ background:#263a53;color:#d5e0ee;
+ border:1px solid #49617c;font-weight:bold;font-size:14px;
+}
+.player.active{border:2px solid #ffce4d;color:#ffda68}
+#status{
+ background:#0d1929;padding:14px 8px;border-radius:13px;
+ margin-bottom:17px;color:#75edaa;font-weight:bold;
+ min-height:46px;display:flex;align-items:center;justify-content:center;
+ font-size:15px;
+}
+.board-frame{
+ width:100%;max-width:500px;margin:0 auto;
+ padding:9px;background:#765337;border-radius:14px;
+ box-shadow:0 8px 22px #0006,inset 0 0 0 2px #c49a68;
+}
+#board{
+ width:100%;aspect-ratio:1;display:grid;
+ grid-template-columns:repeat(8,minmax(0,1fr));
+ grid-template-rows:repeat(8,minmax(0,1fr));
+ overflow:hidden;border:2px solid #d3b184;border-radius:5px;
+}
+.square{
+ position:relative;display:flex;align-items:center;
+ justify-content:center;min-width:0;min-height:0;
+ cursor:pointer;user-select:none;touch-action:manipulation;
+}
+.light{background:#f2dfbd}
+.dark{background:#a8754d}
+.square.selected{background:#e9d34f!important}
+.square.last{background:#c5c65d!important}
+.piece{
+ font-family:"DejaVu Sans","Arial Unicode MS",serif;
+ font-size:clamp(27px,8.5vw,51px);
+ line-height:1;z-index:2;pointer-events:none;
+ transform:translateY(-1px);
+}
+.white-piece{
+ color:#fff;
+ text-shadow:0 2px 2px #333,0 0 2px #222;
+}
+.black-piece{
+ color:#171717;
+ text-shadow:0 1px 1px #fff8;
+}
+.dot{
+ position:absolute;width:25%;height:25%;
+ border-radius:50%;background:#226b43a8;
+}
+.capture-mark{
+ position:absolute;inset:4px;border:4px solid #c84b42;
+ border-radius:50%;
+}
+.coordinates{
+ position:absolute;left:3px;top:2px;font-size:9px;
+ font-weight:bold;opacity:.65;pointer-events:none;
+}
+.actions{display:flex;gap:10px;margin-top:17px}
+button{
+ flex:1;border:0;border-radius:13px;padding:15px 5px;
+ font-size:14px;font-weight:800;cursor:pointer;
+}
+#new{background:linear-gradient(135deg,#ffdc64,#ffb92e);color:#263247}
+#undo{background:linear-gradient(135deg,#49a8ed,#2679c8);color:white}
+button:active{transform:scale(.97)}
+.info{
+ display:flex;justify-content:space-between;gap:8px;
+ margin-top:15px;color:#b7c7db;font-size:12px;
+}
+#moves{
+ margin-top:14px;background:#101d2e;border-radius:12px;
+ padding:12px;color:#c7d5e7;text-align:left;
+ font-size:13px;line-height:1.7;min-height:42px;
+ overflow-wrap:anywhere;
+}
+.hint{color:#91a5bd;font-size:12px;line-height:1.5;margin:14px 4px 0}
+@media(min-width:600px){
+ body{padding-top:30px}
+ .game{padding:22px}
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>♛ OP CHESS MASTER ♛</h1>
+<p>Challenge the Computer AI</p>
+</header>
+
+<main class="game">
+ <div class="players">
+  <div class="player" id="aiLabel">🤖 BLACK AI</div>
+  <div class="player active" id="youLabel">👑 YOU - WHITE</div>
+ </div>
+
+ <div id="status">YOUR TURN — WHITE</div>
+
+ <div class="board-frame">
+  <div id="board"></div>
+ </div>
+
+ <div class="actions">
+  <button id="new" onclick="newGame()">↻ NEW GAME</button>
+  <button id="undo" onclick="undoMove()">↶ UNDO</button>
+ </div>
+
+ <div class="info">
+  <span>♙ You: White</span>
+  <span>♟ AI: Black</span>
+  <span id="moveCount">Move: 1</span>
+ </div>
+
+ <div id="moves">Move history will appear here.</div>
+ <p class="hint">
+  Tap your white piece, then tap a highlighted square.<br>
+  AI will automatically make its move.
+ </p>
+</main>
+
+<script>
+const game = new Chess();
+const board = document.getElementById("board");
+const statusBox = document.getElementById("status");
+
+const symbols = {
+ w:{k:"♔",q:"♕",r:"♖",b:"♗",n:"♘",p:"♙"},
+ b:{k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"}
+};
+
+const files="abcdefgh";
+let selected=null;
+let legal=[];
+let aiThinking=false;
+let lastMove=null;
+
+function render(){
+ board.innerHTML="";
+ const squares=game.board();
+
+ for(let r=0;r<8;r++){
+  for(let c=0;c<8;c++){
+   const name=files[c]+(8-r);
+   const piece=squares[r][c];
+
+   const cell=document.createElement("div");
+   cell.className="square "+((r+c)%2===0?"light":"dark");
+
+   if(selected===name)cell.classList.add("selected");
+   if(lastMove && (lastMove.from===name||lastMove.to===name))
+    cell.classList.add("last");
+
+   const target=legal.find(m=>m.to===name);
+
+   if(target){
+    const mark=document.createElement("div");
+    mark.className=target.captured?"capture-mark":"dot";
+    cell.appendChild(mark);
+   }
+
+   if(piece){
+    const span=document.createElement("span");
+    span.className="piece "+(piece.color==="w"?"white-piece":"black-piece");
+    span.textContent=symbols[piece.color][piece.type];
+    cell.appendChild(span);
+   }
+
+   if(c===0||r===7){
+    const coord=document.createElement("span");
+    coord.className="coordinates";
+    coord.textContent=c===0?(8-r):files[c];
+    cell.appendChild(coord);
+   }
+
+   cell.addEventListener("click",()=>clickSquare(name));
+   board.appendChild(cell);
+  }
+ }
+
+ updateStatus();
+ updateHistory();
+}
+
+function clickSquare(name){
+ if(aiThinking||game.game_over()||game.turn()!=="w")return;
+
+ const piece=game.get(name);
+ const target=legal.find(m=>m.to===name);
+
+ if(selected && target){
+  const result=game.move({
+   from:selected,to:name,promotion:"q"
+  });
+
+  if(result){
+   lastMove={from:result.from,to:result.to};
+   selected=null;legal=[];
+   render();
+
+   if(!game.game_over()){
+    aiThinking=true;
+    updateStatus();
+    setTimeout(makeAI,250);
+   }
+   return;
+  }
+ }
+
+ if(piece&&piece.color==="w"){
+  selected=name;
+  legal=game.moves({square:name,verbose:true});
+ }else{
+  selected=null;legal=[];
+ }
+ render();
+}
+
+const value={p:100,n:320,b:335,r:500,q:900,k:20000};
+
+function evaluate(pos){
+ if(pos.in_checkmate())return pos.turn()==="w"?-100000:100000;
+ if(pos.game_over())return 0;
+
+ let score=0;
+ const b=pos.board();
+
+ for(let r=0;r<8;r++){
+  for(let c=0;c<8;c++){
+   const p=b[r][c];
+   if(!p)continue;
+
+   let v=value[p.type];
+   const center=3.5-(Math.abs(3.5-c)+Math.abs(3.5-r))/2;
+
+   if(p.type==="n"||p.type==="b")v+=center*7;
+   if(p.type==="p")v+=(p.color==="w"?6-r:r-1)*4;
+
+   score+=p.color==="w"?v:-v;
+  }
+ }
+ return score;
+}
+
+function search(pos,depth,alpha,beta){
+ if(depth===0||pos.game_over())return evaluate(pos);
+
+ const moves=pos.moves();
+ if(pos.turn()==="w"){
+  let best=-Infinity;
+  for(const m of moves){
+   const next=new Chess(pos.fen());
+   next.move(m);
+   best=Math.max(best,search(next,depth-1,alpha,beta));
+   alpha=Math.max(alpha,best);
+   if(beta<=alpha)break;
+  }
+  return best;
+ }else{
+  let best=Infinity;
+  for(const m of moves){
+   const next=new Chess(pos.fen());
+   next.move(m);
+   best=Math.min(best,search(next,depth-1,alpha,beta));
+   beta=Math.min(beta,best);
+   if(beta<=alpha)break;
+  }
+  return best;
+ }
+}
+
+function makeAI(){
+ if(game.game_over()){
+  aiThinking=false;render();return;
+ }
+
+ const moves=game.moves();
+ let best=null,bestScore=Infinity;
+
+ for(const m of moves){
+  const next=new Chess(game.fen());
+  next.move(m);
+  const score=search(next,2,-Infinity,Infinity);
+
+  if(score<bestScore){
+   bestScore=score;best=m;
+  }
+ }
+
+ if(best){
+  const result=game.move(best);
+  lastMove={from:result.from,to:result.to};
+ }
+
+ aiThinking=false;
+ render();
+}
+
+function updateStatus(){
+ const you=document.getElementById("youLabel");
+ const ai=document.getElementById("aiLabel");
+
+ you.classList.toggle("active",game.turn()==="w"&&!game.game_over());
+ ai.classList.toggle("active",game.turn()==="b"&&!game.game_over());
+
+ if(game.in_checkmate()){
+  statusBox.textContent=game.turn()==="w"?"CHECKMATE — AI WINS 🤖":"CHECKMATE — YOU WIN 🏆";
+ }else if(game.in_draw()){
+  statusBox.textContent="GAME DRAW 🤝";
+ }else if(aiThinking){
+  statusBox.textContent="🤖 AI IS THINKING...";
+ }else if(game.in_check()){
+  statusBox.textContent="⚠️ CHECK! KING IS IN DANGER";
+ }else{
+  statusBox.textContent=game.turn()==="w"?"YOUR TURN — WHITE ♙":"AI TURN — BLACK 🤖";
+ }
+}
+
+function updateHistory(){
+ const history=game.history();
+ document.getElementById("moveCount").textContent=
+  "Move: "+(Math.floor(history.length/2)+1);
+
+ if(!history.length){
+  document.getElementById("moves").textContent="Move history will appear here.";
+  return;
+ }
+
+ let text="";
+ for(let i=0;i<history.length;i+=2){
+  text+=(Math.floor(i/2)+1)+". "+history[i]+" ";
+  if(history[i+1])text+=history[i+1]+" ";
+ }
+ document.getElementById("moves").textContent=text;
+}
+
+function newGame(){
+ game.reset();
+ selected=null;legal=[];aiThinking=false;lastMove=null;
+ render();
+}
+
+function undoMove(){
+ if(aiThinking||game.history().length<2)return;
+ game.undo();
+ game.undo();
+ selected=null;legal=[];lastMove=null;
+ render();
+}
+
+render();
+</script>
+</body>
+</html>
+function evaluate(pos) {
+  if (pos.in_checkmate()) {
+    return pos.turn() === "w" ? -100000 : 100000;
+  }
+
+  if (pos.game_over()) return 0;
+
+  const values = {
+    p: 100, n: 320, b: 335,
+    r: 500, q: 900, k: 20000
+  };
+
+  let score = 0;
+  const board = pos.board();
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p) continue;
+
+      let v = values[p.type];
+
+      const center =
+        3.5 - (Math.abs(3.5-c) + Math.abs(3.5-r)) / 2;
+
+      if (p.type === "n" || p.type === "b") {
+        v += center * 10;
+      }
+
+      if (p.type === "p") {
+        v += (p.color === "w" ? 6-r : r-1) * 5;
+      }
+
+      score += p.color === "w" ? v : -v;
+    }
+  }
+
+  return score;
+}
+
+function search(pos, depth, alpha, beta) {
+  if (depth === 0 || pos.game_over()) {
+    return evaluate(pos);
+  }
+
+  const moves = pos.moves();
+
+  if (pos.turn() === "w") {
+    let best = -Infinity;
+
+    for (const move of moves) {
+      const next = new Chess(pos.fen());
+      next.move(move);
+
+      best = Math.max(
+        best,
+        search(next, depth-1, alpha, beta)
+      );
+
+      alpha = Math.max(alpha, best);
+      if (beta <= alpha) break;
+    }
+
+    return best;
+  } else {
+    let best = Infinity;
+
+    for (const move of moves) {
+      const next = new Chess(pos.fen());
+      next.move(move);
+
+      best = Math.min(
+        best,
+        search(next, depth-1, alpha, beta)
+      );
+
+      beta = Math.min(beta, best);
+      if (beta <= alpha) break;
+    }
+
+    return best;
+  }
+}
+
+async function makeAI() {
+  if (game.game_over() || game.turn() !== "b") {
+    aiThinking = false;
+    render();
+    return;
+  }
+
+  try {
+    const moves = game.moves();
+    let candidates = [];
+
+    // पहले संभावित चालों को जल्दी से जांचो
+    for (const move of moves) {
+      const next = new Chess(game.fen());
+      next.move(move);
+
+      candidates.push({
+        move: move,
+        score: evaluate(next)
+      });
+    }
+
+    // Black के लिए सबसे अच्छी 10 चालें चुनो
+    candidates.sort((a, b) => a.score - b.score);
+    candidates = candidates.slice(0, 10);
+
+    let best = null;
+    let bestScore = Infinity;
+
+    // थोड़ी गहराई से सिर्फ चुनी हुई चालें जांचो
+    for (let i = 0; i < candidates.length; i++) {
+      if (game.turn() !== "b" || game.game_over()) break;
+
+      const next = new Chess(game.fen());
+      next.move(candidates[i].move);
+
+      const score = search(next, 1, -Infinity, Infinity);
+
+      if (score < bestScore) {
+        bestScore = score;
+        best = candidates[i].move;
+      }
+
+      // मोबाइल को दूसरे काम करने का समय दो
+      if (i % 2 === 1) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+
+    if (best && game.turn() === "b" && !game.game_over()) {
+      const result = game.move(best);
+
+      if (result) {
+        lastMove = {
+          from: result.from,
+          to: result.to
+        };
+      }
+    }
+
+  } catch (error) {
+    console.error("AI Error:", error);
+    statusBox.textContent = "AI ERROR - PLEASE START NEW GAME";
+  }
+
+  aiThinking = false;
+  render();
+}
